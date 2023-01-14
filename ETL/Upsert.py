@@ -33,25 +33,25 @@ def create_upsert_script(schema_file, unique_id, table_name):
     )
     load_job = client.load_table_from_uri(csv_file, table.reference, job_config=job_config)
     load_job.result()
+    
+    query_result = load_job.result()
+    rows_updated = load_job.rows_updated
+    rows_deleted = load_job.rows_deleted
+    is_success   = query_job.state
+    
+    # Get the current time
+    execution_time = datetime.datetime.now()
 
-    # Define the SQL query for the upsert
-    query = f'''
-    WITH new_data AS (
-        SELECT * FROM {table.reference.path}
-    )
-    UPDATE {table.reference.path}
-    SET is_active = new_data.is_active, purchase_date = new_data.purchase_date
-    FROM new_data
-    WHERE {table.reference.path}.{unique_id} = new_data.{unique_id}
-
-    INSERT INTO {table.reference.path}
-    SELECT * FROM new_data
-    WHERE NOT EXISTS (
-        SELECT 1 FROM {table.reference.path}
-        WHERE {table.reference.path}.{unique_id} = new_data.{unique_id}
-    )
-    '''
-
-    # Execute the query
-    query_job = client.query(query)
-    query_job.result()
+    # Insert a record into the ExecutionHistory table
+    execution_history_table_id = 'ExecutionHistory'
+    execution_history_table = bigquery.Table(f"{client.project}.{dataset_id}.{execution_history_table_id}")
+    execution_history_schema = [
+        bigquery.SchemaField('execution_time', 'TIMESTAMP', mode='REQUIRED'),
+        bigquery.SchemaField('table_name', 'STRING', mode='REQUIRED'),
+        bigquery.SchemaField('rows_updated', 'INTEGER', mode='REQUIRED'),
+        bigquery.SchemaField('rows_deleted', 'INTEGER', mode='REQUIRED'),
+        bigquery.SchemaField('is_success', 'STRING', mode='REQUIRED')
+    ]
+    
+    record_job = client.insert_rows(execution_history_table, [(execution_time, table_name, rows_updated, rows_deleted, is_success)])
+    record_job.result()
